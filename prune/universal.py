@@ -32,6 +32,7 @@ class Meltable(nn.Module):
     @classmethod
     def observe(cls, pack, lr):
         tmp = pack.train_loader
+        relu6 = False
         if pack.tick_trainset is not None:
             pack.train_loader = pack.tick_trainset
 
@@ -46,6 +47,9 @@ class Meltable(nn.Module):
                     replace_relu(modules[k]._modules)
                 if isinstance(modules[k], nn.ReLU):
                     modules[k] = nn.LeakyReLU(inplace=True)
+                elif isinstance(modules[k], nn.ReLU6):
+                    modules[k] = nn.LeakyReLU(inplace=True)
+                    relu6 = True
         replace_relu(pack.net._modules)
 
         count = 0
@@ -65,6 +69,9 @@ class Meltable(nn.Module):
                 if len(modules[k]._modules) > 0:
                     recover_relu(modules[k]._modules)
                 if isinstance(modules[k], nn.LeakyReLU):
+                    # if relu6:
+                    #     modules[k] = nn.ReLU6(inplace=True)
+                    # else:
                     modules[k] = nn.ReLU(inplace=True)
         recover_relu(pack.net._modules)
 

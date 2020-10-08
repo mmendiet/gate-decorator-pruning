@@ -3,6 +3,57 @@
  * If you are using this code in your research, please cite the paper:
  * Gate Decorator: Global Filter Pruning Method for Accelerating Deep Convolutional Neural Networks, in NeurIPS 2019.
 """
+# from config import parse_from_dict
+# parse_from_dict({
+#     "base": {
+#         "task_name": "resnet56m_cifar100_baseline_204",
+#         "model_saving_interval": 1,
+#         "cuda": True,
+#         "seed": 1995,
+#         "checkpoint_path": "",
+#         "epoch": 0,
+#         "multi_gpus": True,
+#         "fp16": False
+#     },
+#     "model": {
+#         "name": "resnet56m",
+#         "num_class": 100,
+#         "pretrained": False,
+#         "resolution": 20
+#     },
+#     "train": {
+#         "trainer": "normal",
+#         "max_epoch": 400,
+#         "optim": "sgd",
+#         # "steplr": [
+#         #     [80, 0.1],
+#         #     [120, 0.01],
+#         #     [160, 0.001]
+#         # ],
+#         "weight_decay": 5e-4,
+#         "momentum": 0.9,
+#         "nesterov": True
+#     },
+#     "data": {
+#         "type": "cifar100",
+#         "shuffle": True,
+#         "batch_size": 128,
+#         "test_batch_size": 128,
+#         "num_workers": 4
+#     },
+#     "loss": {
+#         "criterion": "softmax"
+#     },
+#     "gbn": {
+#         "sparse_lambda": 1e-3,
+#         "flops_eta": 0,
+#         "lr_min": 1e-3,
+#         "lr_max": 1e-2,
+#         "tock_epoch": 10,
+#         "T": 10,
+#         "p": 0.002
+#     }
+# })
 
 import torch
 import torch.nn as nn
@@ -50,24 +101,6 @@ def get_lr_func():
     else:
         assert False
 
-def adjust_learning_rate(epoch, pack):
-    if pack.optimizer is None:
-        if cfg.train.optim == 'sgd' or cfg.train.optim is None:
-            pack.optimizer = optim.SGD(
-                pack.net.parameters(),
-                lr=1,
-                momentum=cfg.train.momentum,
-                weight_decay=cfg.train.weight_decay,
-                nesterov=cfg.train.nesterov
-            )
-        else:
-            print('WRONG OPTIM SETTING!')
-            assert False
-        pack.lr_scheduler = optim.lr_scheduler.LambdaLR(pack.optimizer, get_lr_func())
-
-    pack.lr_scheduler.step(epoch)
-    return pack.lr_scheduler.get_lr()
-
 def recover_pack():
     train_loader, test_loader = get_loader()
 
@@ -81,7 +114,7 @@ def recover_pack():
         'lr_scheduler': None
     })
 
-    adjust_learning_rate(cfg.base.epoch, pack)
+    pack.trainer.adjust_learning_rate(pack)
     return pack
 
 def set_seeds():
@@ -99,16 +132,20 @@ def set_seeds():
 def main():
     set_seeds()
     pack = recover_pack()
-
+    best_acc = 0.0
+    # pack.trainer.adjust_learning_rate(pack)
     for epoch in range(cfg.base.epoch + 1, cfg.train.max_epoch + 1):
-        lr = adjust_learning_rate(epoch, pack)
         info = pack.trainer.train(pack)
         info.update(pack.trainer.test(pack))
+        lr = pack.optimizer.param_groups[0]['lr']
         info.update({'LR': lr})
         print(epoch, info)
         logger.save_record(epoch, info)
-        if epoch % cfg.base.model_saving_interval == 0:
+        # if epoch % cfg.base.model_saving_interval == 0:
+        if info['acc@1'] > best_acc:
             logger.save_network(epoch, pack.net)
+            best_acc = info['acc@1']
+
 
 if __name__ == '__main__':
     main()

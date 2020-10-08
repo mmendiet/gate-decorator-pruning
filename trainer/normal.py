@@ -14,6 +14,8 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 from config import cfg
+import torch.optim as optim
+
 
 FINISH_SIGNAL = 'finish'
 
@@ -47,7 +49,7 @@ class NormalTrainer():
                 data, target = data.cuda(), target.cuda()
 
             with torch.no_grad():
-                output = pack.net(data)
+                output = pack.net(F.interpolate(data, (cfg.model.resolution, cfg.model.resolution), mode='bilinear', align_corners=True))
                 loss_acc += pack.criterion(output, target).data.item()
                 acc = accuracy(output, target, topk)
                 for acc_idx, score in enumerate(acc):
@@ -92,6 +94,7 @@ class NormalTrainer():
                 if (cur_iter + 1) % acc_step == 0:
                     if update:
                         pack.optimizer.step()
+                        lr = self.adjust_learning_rate(pack)
                     pack.optimizer.zero_grad()
 
                 loss_acc += loss.item()
@@ -102,3 +105,24 @@ class NormalTrainer():
             'epoch_time': time() - begin
         }
         return info
+
+    def adjust_learning_rate(self, pack):
+        if pack.optimizer is None:
+            if cfg.train.optim == 'sgd' or cfg.train.optim is None:
+                pack.optimizer = optim.SGD(
+                    pack.net.parameters(),
+                    # lr=1,
+                    lr=0.1,
+                    momentum=cfg.train.momentum,
+                    weight_decay=cfg.train.weight_decay,
+                    nesterov=cfg.train.nesterov
+                )
+            else:
+                print('WRONG OPTIM SETTING!')
+                assert False
+            # pack.lr_scheduler = optim.lr_scheduler.LambdaLR(pack.optimizer, get_lr_func())
+            pack.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(pack.optimizer, len(pack.train_loader)*cfg.train.max_epoch)
+
+        # pack.lr_scheduler.step(epoch)
+        pack.lr_scheduler.step()
+        return pack.optimizer.param_groups[0]['lr'] #pack.lr_scheduler.get_lr()
