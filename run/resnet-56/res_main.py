@@ -11,12 +11,10 @@ print('Change dir from %s to %s' % (os.getcwd(), _p))
 os.chdir(_p)
 sys.path.append(_p)
 
-res = 20
-
 from config import parse_from_dict
 parse_from_dict({
     "base": {
-        "task_name": "resnet56m_cifar100_ticktock_{}".format(res),
+        "task_name": "resnet56m_cifar100_ticktock_mutual",
         "model_saving_interval": 1,
         "cuda": True,
         "seed": 1995,
@@ -29,10 +27,10 @@ parse_from_dict({
         "name": "resnet56m",
         "num_class": 100,
         "pretrained": False,
-        "resolution": res
+        "resolution": [32, 28, 24, 20]
     },
     "train": {
-        "trainer": "normal",
+        "trainer": "mutual",
         "max_epoch": 200,
         "optim": "sgd",
         # "steplr": [
@@ -82,7 +80,7 @@ from prune.utils import analyse_model, finetune
 set_seeds()
 pack = recover_pack()
 
-model_dict = torch.load('logs/resnet56m_cifar100_baseline_{}4/ckp.398.torch'.format(res), map_location='cpu' if not cfg.base.cuda else 'cuda')
+model_dict = torch.load('logs/resnet56m_cifar100_baseline/ckp.192.torch', map_location='cpu' if not cfg.base.cuda else 'cuda')
 pack.net.module.load_state_dict(model_dict)
 
 GBNs = GatedBatchNorm2d.transform(pack.net)
@@ -178,9 +176,13 @@ def clone_model(net):
     return model, gbns
 
 cloned, _ = clone_model(pack.net)
-BASE_FLOPS, BASE_PARAM = analyse_model(cloned.module, torch.randn(1, 3, cfg.model.resolution, cfg.model.resolution).cuda())
-print('%.3f MFLOPS' % (BASE_FLOPS / 1e6))
-print('%.3f M' % (BASE_PARAM / 1e6))
+BASE_FLOPS, BASE_PARAM = [], []
+for res in cfg.model.resolution:
+    f, p = analyse_model(cloned.module, torch.randn(1, 3, res, res).cuda())
+    BASE_FLOPS.append(f)
+    BASE_PARAM.append(p)
+    print('%.3f MFLOPS' % (f / 1e6))
+    print('%.3f M' % (p / 1e6))
 del cloned
 
 def eval_prune(pack):
@@ -192,7 +194,12 @@ def eval_prune(pack):
     cloned_pack.net = cloned
     Meltable.observe(cloned_pack, 0.001)
     Meltable.melt_all(cloned_pack.net)
-    flops, params = analyse_model(cloned_pack.net.module, torch.randn(1, 3, cfg.model.resolution, cfg.model.resolution).cuda())
+    flops = []
+    params = []
+    for res in cfg.model.resolution:
+        f, p = analyse_model(cloned_pack.net.module, torch.randn(1, 3, res, res).cuda())
+        flops.append(f)
+        params.append(p)
     del cloned
     del cloned_pack
     
@@ -207,16 +214,20 @@ LOGS = []
 flops_save_points = set([95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5])
 
 iter_idx = 0
+info = {}
+info.update(pack.trainer.test(pack))
+print('Test Acc: %.2f' % (info['acc@1']))
 prune_agent.tock(lr_min=cfg.gbn.lr_min, lr_max=cfg.gbn.lr_max, tock_epoch=cfg.gbn.tock_epoch)
 while True:
     left_filter = prune_agent.total_filters - prune_agent.pruned_filters
     num_to_prune = int(left_filter * cfg.gbn.p)
     info = prune_agent.prune(num_to_prune, tick=True, lr=cfg.gbn.lr_min)
     flops, params = eval_prune(pack)
-    info.update({
-        'flops': '[%.2f%%] %.3f MFLOPS' % (flops/BASE_FLOPS * 100, flops / 1e6),
-        'param': '[%.2f%%] %.3f M' % (params/BASE_PARAM * 100, params / 1e6)
-    })
+    for idx in range(0, len(cfg.model.resolution)):
+        info.update({
+            'flops': '[%.2f%%] %.3f MFLOPS' % (flops[idx]/BASE_FLOPS[idx] * 100, flops[idx] / 1e6),
+            'param': '[%.2f%%] %.3f M' % (params[idx]/BASE_PARAM[idx] * 100, params[idx] / 1e6)
+        })
     LOGS.append(info)
     print('Iter: %d,\t FLOPS: %s,\t Param: %s,\t Left: %d,\t Pruned Ratio: %.2f %%,\t Train Loss: %.4f,\t Test Acc: %.2f' % 
           (iter_idx, info['flops'], info['param'], info['left'], info['total_pruned_ratio'] * 100, info['train_loss'], info['after_prune_test_acc']))
@@ -226,7 +237,7 @@ while True:
         print('Tocking:')
         prune_agent.tock(lr_min=cfg.gbn.lr_min, lr_max=cfg.gbn.lr_max, tock_epoch=cfg.gbn.tock_epoch)
 
-    flops_ratio = flops/BASE_FLOPS * 100
+    flops_ratio = flops[idx]/BASE_FLOPS[idx] * 100
     for point in [i for i in list(flops_save_points)]:
         if flops_ratio <= point:
             torch.save(pack.net.module.state_dict(), './logs/{}/{}.ckp'.format(cfg.base.task_name, point))

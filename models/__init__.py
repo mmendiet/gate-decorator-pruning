@@ -10,7 +10,7 @@ def get_vgg16_for_cifar():
 def get_resnet50_for_imagenet():
     # from models.imagenet.resnet50 import Resnet50
     # return Resnet50(cfg.model.num_class)
-    return torchvision.models.resnet50(pretrained=cfg.model.pretrained)
+    return torchvision.models.resnet50(pretrained=True)
 
 def get_resnet56():
     from models.cifar.resnet56 import resnet56

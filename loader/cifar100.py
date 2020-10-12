@@ -34,6 +34,7 @@ from config import cfg
 
 #     return train_loader, test_loader
 import torch.nn.functional as F
+from loader.transforms import InputList
 def get_cifar100():
     print('==> Preparing Cifar100 data..')
     normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
@@ -43,11 +44,13 @@ def get_cifar100():
         transforms.Lambda(lambda x: F.pad(x.unsqueeze(0),
                                           (4, 4, 4, 4), mode='reflect').squeeze()),
         transforms.ToPILImage(),
-        transforms.RandomCrop(cfg.model.resolution),
+        transforms.RandomCrop(cfg.model.resolution[0]),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        normalize
+        normalize,
         # InputList(FLAGS.resolution_list)
+        InputList(cfg.model.resolution)
+
     ])
     transform_test = transforms.Compose([
         transforms.ToTensor(),

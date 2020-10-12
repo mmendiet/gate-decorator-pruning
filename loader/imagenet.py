@@ -56,6 +56,7 @@ from config import cfg
 
 from torchvision import datasets, transforms
 from loader.transforms import Lighting
+import numpy as np
 def _get_imagenet():
     image_size = 224
     image_resize = 256
@@ -85,7 +86,7 @@ def _get_imagenet():
     train_set = datasets.ImageFolder(os.path.join(dataset_dir, 'train'), transform=train_transforms)
     val_set = datasets.ImageFolder(os.path.join(dataset_dir, 'val'), transform=val_transforms)
     train_loader = torch.utils.data.DataLoader(
-        train_set, batch_size=cfg.data.batch_size, shuffle=True,
+        torch.utils.data.Subset(train_set, np.random.choice(len(train_set), 100000, replace=False)), batch_size=cfg.data.batch_size, shuffle=True,
         pin_memory=True, num_workers=cfg.data.num_workers,
         drop_last=False)
     val_loader = torch.utils.data.DataLoader(

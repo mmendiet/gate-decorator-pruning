@@ -206,6 +206,9 @@ LOGS = []
 flops_save_points = set([95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5])
 
 iter_idx = 0
+info = {}
+info.update(pack.trainer.test(pack))
+print('Test Acc: %.2f' % (info['acc@1']))
 prune_agent.tock(lr_min=cfg.gbn.lr_min, lr_max=cfg.gbn.lr_max, tock_epoch=cfg.gbn.tock_epoch)
 while True:
     left_filter = prune_agent.total_filters - prune_agent.pruned_filters
